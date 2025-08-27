@@ -245,7 +245,17 @@
 
         // Function to calculate total consumption for a given time range
         function calculateTotalConsumption(filteredData) {
-            return filteredData.reduce((acc, item) => acc + item.kWh, 0).toFixed(2);
+            if (filteredData.length < 2) {
+                return 0; // 数据不足，无法计算消耗
+            }
+            // 确保数据按时间升序排列
+            const sortedData = filteredData.sort((a, b) => new Date(a.time) - new Date(b.time));
+            const startKWh = sortedData[0].kWh;
+            const endKWh = sortedData[sortedData.length - 1].kWh;
+        
+            // 用电量 = 开始时的电量 - 结束时的电量
+            const consumption = startKWh - endKWh;
+            return consumption.toFixed(2);
         }
 
         // Function to update chart and table based on selected time range
@@ -342,34 +352,52 @@
         }
 
         // Function to calculate weekly and monthly average consumption
-        function calculateAverages(data, interval) {
-            const now = new Date();
-            let groups = {};
-            let timeKey;
+        // 正确的 calculateAverages 函数
+function calculateAverages(data, interval) {
+    if (data.length < 2) return [];
 
-            data.forEach(item => {
-                const date = new Date(item.time);
-                if (interval === 'week') {
-                    const weekStart = new Date(date.setDate(date.getDate() - date.getDay()));
-                    timeKey = weekStart.toISOString().split('T')[0];
-                } else if (interval === 'month') {
-                    const monthKey = `${date.getFullYear()}-${date.getMonth() + 1}`;
-                    timeKey = monthKey;
-                }
-                
-                if (!groups[timeKey]) {
-                    groups[timeKey] = { total: 0, count: 0 };
-                }
-                groups[timeKey].total += item.kWh;
-                groups[timeKey].count += 1;
+    const consumptionData = [];
+    // 1. 先计算出每日的消耗量
+    for (let i = 1; i < data.length; i++) {
+        const dailyConsumption = data[i - 1].kWh - data[i].kWh;
+        if (dailyConsumption >= 0) { // 避免因充值导致数据异常
+             consumptionData.push({
+                time: data[i].time,
+                consumption: dailyConsumption
             });
+        }
+    }
 
-            return Object.keys(groups).map(key => ({
-                time: key,
-                avgKWh: (groups[key].total / groups[key].count).toFixed(2)
-            }));
+    // 2. 按周或月对“每日消耗量”进行分组
+    let groups = {};
+    consumptionData.forEach(item => {
+        const date = new Date(item.time);
+        let timeKey;
+
+        if (interval === 'month') {
+            timeKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        } else if (interval === 'week') {
+            const day = date.getDay();
+            // 创建一个新的日期对象进行计算，避免修改原对象
+            const weekStartDate = new Date(date);
+            weekStartDate.setDate(date.getDate() - (day === 0 ? 6 : day - 1)); // 设置为周一
+            timeKey = weekStartDate.toISOString().split('T')[0];
         }
 
+        if (!groups[timeKey]) {
+            groups[timeKey] = { total: 0, count: 0 };
+        }
+        groups[timeKey].total += item.consumption;
+        groups[timeKey].count += 1;
+    });
+
+    // 3. 计算每个分组的平均值
+    return Object.keys(groups).map(key => ({
+        time: key,
+        // 这里是 “平均每日用电量”
+        avgKWh: (groups[key].total / groups[key].count).toFixed(2)
+    })).sort((a, b) => new Date(a.time) - new Date(b.time)); // 排序
+}
         // Function to render a bar chart
         function renderBarChart(containerId, data, xField, yField, title) {
             new Column(containerId, {
